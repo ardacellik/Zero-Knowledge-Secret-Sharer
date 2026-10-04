@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Knowledge One-Time Secret Sharer</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #ef4444;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { background-color: var(--card-bg); width: 100%; max-width: 600px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); border: 1px solid #334155; }
+        h1 { font-size: 24px; margin-bottom: 10px; color: #fff; text-align: center; }
+        p.subtitle { color: var(--text-muted); font-size: 14px; text-align: center; margin-bottom: 25px; }
+        textarea { width: 100%; height: 120px; background-color: #0f172a; border: 1px solid #475569; border-radius: 8px; padding: 12px; color: #fff; font-size: 15px; resize: none; outline: none; transition: border 0.2s; }
+        textarea:focus { border-color: var(--accent); }
+        button { width: 100%; background-color: var(--accent); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 15px; transition: background 0.2s; }
+        button:hover { background-color: var(--accent-hover); }
+        .result-box, .secret-display { display: none; margin-top: 25px; background: #0f172a; padding: 15px; border-radius: 8px; border: 1px dashed var(--accent); word-break: break-all; }
+        .link-text { color: #38bdf8; font-weight: bold; font-size: 14px; }
+        .error { color: var(--danger); text-align: center; margin-top: 15px; font-weight: 500; }
+        .badge { background: #312e81; color: #818cf8; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="create-view">
+        <div style="text-align:center;"><span class="badge">ZKP ENCRYPTION SECURE</span></div>
+        <h1>Tek Seferlik Sır Paylaş</h1>
+        <p class="subtitle">Mesajınız sunucuya gönderilmeden önce tarayıcınızda şifrelenir.</p>
+        <textarea id="secret-input" placeholder="Gizli şifrenizi, API anahtarınızı veya mesajınızı buraya yazın..."></textarea>
+        <button id="submit-btn" onclick="createSecret()">Güvenli Bağlantı Oluştur</button>
+        
+        <div class="result-box" id="result-box">
+            <p style="font-size: 14px; margin-bottom: 8px; color: var(--text-muted);">Alıcıya göndereceğiniz tek seferlik bağlantı:</p>
+            <div class="link-text" id="generated-link"></div>
+            <p style="font-size: 11px; margin-top: 10px; color: #fbbf24;">⚠️ Sunucu anahtarı bilmez (# işaretinden sonrası gitmez). Bağlantı açıldığı an kendini yok edecektir!</p>
+        </div>
+    </div>
+
+    <div id="read-view" style="display: none;">
+        <div style="text-align:center;"><span class="badge" style="background:#991b1b; color:#fca5a5;">SELF-DESTRUCT ALERT</span></div>
+        <h1>Bir Sır Aldınız</h1>
+        <p class="subtitle">Aşağıdaki sır veritabanından kalıcı olarak silinmiştir. Sayfayı yenilerseniz tekrar erişemezsiniz.</p>
+        <div class="secret-display" id="secret-display" style="display: block; font-size: 16px; color: #2dd4bf; white-space: pre-wrap;"></div>
+    </div>
+
+    <div class="error" id="error-box"></div>
+</div>
+
+<script>
+const bufferToHex = buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+const hexToBuffer = hex => new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))).buffer;
+
+window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('id')) {
+        document.getElementById('create-view').style.display = 'none';
+        document.getElementById('read-view').style.display = 'block';
+        readAndDecryptSecret(urlParams.get('id'));
+    }
+});
+
+async function createSecret() {
+    const plainText = document.getElementById('secret-input').value.trim();
+    const errorBox = document.getElementById('error-box');
+    const resultBox = document.getElementById('result-box');
+    errorBox.innerText = "";
+
+    if (!plainText) {
+        errorBox.innerText = "Lütfen bir sır yazın.";
+        return;
+    }
+
+    try {
+        const key = await window.crypto.subtle.generateKey(
+            { name: "AES-GCM", length: 256 },
+            true,
+            ["encrypt", "decrypt"]
+        );
+
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+        const enc = new TextEncoder();
+        const ciphertextBuffer = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv: iv },
+            key,
+            enc.encode(plainText)
+        );
+
+        const exportedKey = await window.crypto.subtle.exportKey("raw", key);
+        
+        const keyHex = bufferToHex(exportedKey);
+        const ciphertextHex = bufferToHex(ciphertextBuffer);
+        const ivHex = bufferToHex(iv);
+
+        const response = await fetch('secret.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ciphertext: ciphertextHex, iv: ivHex })
+        });
+
+        const resData = await response.json();
+
+        if (resData.success) {
+            const baseUrl = window.location.origin + window.location.pathname;
+            const finalLink = `${baseUrl}?id=${resData.id}#${keyHex}`;
+            
+            document.getElementById('generated-link').innerText = finalLink;
+            resultBox.style.display = 'block';
+            document.getElementById('submit-btn').disabled = true;
+        } else {
+            errorBox.innerText = "Sunucu hatası: Sır kaydedilemedi.";
+        }
+
+    } catch (err) {
+        console.error(err);
+        errorBox.innerText = "Şifreleme hatası.";
+    }
+}
+
+async function readAndDecryptSecret(id) {
+    const errorBox = document.getElementById('error-box');
+    const displayBox = document.getElementById('secret-display');
+    
+    const keyHex = window.location.hash.substring(1);
+
+    if (!keyHex) {
+        errorBox.innerText = "Hata: Şifre çözme anahtarı URL'de bulunamadı (# kısmı eksik).";
+        return;
+    }
+
+    try {
+        const response = await fetch(`secret.php?id=${id}`);
+        
+        if (response.status === 410 || response.status === 404) {
+            errorBox.innerText = "Bu sır daha önce okunmuş, süresi dolmuş veya hiç var olmamış.";
+            displayBox.style.display = 'none';
+            return;
+        }
+
+        const data = await response.json();
+        
+        const ciphertextBuffer = hexToBuffer(data.ciphertext);
+        const ivBuffer = hexToBuffer(data.iv);
+        const keyBuffer = hexToBuffer(keyHex);
+
+        const cryptoKey = await window.crypto.subtle.importKey(
+            "raw",
+            keyBuffer,
+            { name: "AES-GCM" },
+            false,
+            ["decrypt"]
+        );
+
+        // Şifre çözme parametreleri düzeltildi
+        const decryptedBuffer = await window.crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: ivBuffer },
+            cryptoKey,
+            ciphertextBuffer
+        );
+
+        // DOĞRU DÖNÜŞÜM: TextDecoder nesnesi kullanıldı
+        const dec = new TextDecoder();
+        displayBox.innerText = dec.decode(decryptedBuffer);
+
+    } catch (err) {
+        console.error("Deşifre hatası detayı:", err);
+        errorBox.innerText = "Şifre çözme başarısız! Bağlantı bozulmuş veya anahtar geçersiz.";
+    }
+}
+</script>
+</body>
+</html>
