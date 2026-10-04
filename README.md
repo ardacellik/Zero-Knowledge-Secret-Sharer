@@ -18,8 +18,3 @@ Bu proje, istemci tarafında (Client-Side) uçtan uca şifreleme ve sunucu taraf
 - `secret.php`: Sırrı kaydetme ve tek seferlik okuma/silme işlemlerini yürüten API.
 - `db.php`: Veritabanı PDO bağlantı yapılandırması.
 - `schema.sql`: Veritabanı ve tablo şemasını oluşturan SQL sorguları.
-
- ## 📸 Ekran Görüntüleri
-![Şifreleme Ekranı](1_sifreleme_ekrani.png)
-![Veritabanı Görünümü](2_veritaban_gorunumu.jfif)
-![Deşifre Ekranı](3_desifre_okuma_ekrani.png) 
